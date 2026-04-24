@@ -1,20 +1,20 @@
-from fastapi import FastAPI, UploadFile, BackgroundTasks, File
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+import sys
+import asyncio
+import threading
 import json
 import os
 import glob
-from ig4 import start_scraper
+from fastapi import FastAPI, UploadFile, BackgroundTasks, File
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from ig4 import start_scraper 
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -22,6 +22,22 @@ app.add_middleware(
 class ScrapeRequest(BaseModel):
     hashtags: list[str]
     limit: int
+
+# --- THE WINDOWS PLAYWRIGHT FIX ---
+# We isolate Playwright into its own thread with a fresh Windows event loop
+# so it doesn't collide with FastAPI's web server loop.
+def run_scraper_isolated(hashtags, limit, cookies_path):
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        loop.run_until_complete(start_scraper(hashtags, cookies_path, limit=limit))
+    finally:
+        loop.close()
+# ----------------------------------
 
 @app.post("/settings/cookies")
 async def save_cookies(file: UploadFile = File(...)):
@@ -32,11 +48,13 @@ async def save_cookies(file: UploadFile = File(...)):
 
 @app.post("/scrape/start")
 async def run_scrape(request: ScrapeRequest, background_tasks: BackgroundTasks):
+    # This matches the signature in your ig4.py
     background_tasks.add_task(
         start_scraper, 
         hashtags=request.hashtags, 
-        limit=request.limit, 
-        cookies_path="cookies.json"
+        cookies_path="cookies.json", # The file you put in the backend folder
+        limit=request.limit,
+        headless=True # Set to False if you want to see the browser pop up
     )
     return {"message": "Scraper started"}
 
@@ -51,5 +69,11 @@ async def get_leads():
         return []
         
     latest_file = max(files, key=os.path.getctime)
-    with open(latest_file, "r") as f:
-        return json.load(f)
+    
+    # --- ADD encoding="utf-8" RIGHT HERE ---
+    try:
+        with open(latest_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error reading leads: {e}")
+        return []
