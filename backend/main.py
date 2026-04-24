@@ -77,3 +77,18 @@ async def get_leads():
     except Exception as e:
         print(f"Error reading leads: {e}")
         return []
+
+        import asyncio
+from fastapi.responses import StreamingResponse
+
+# Global variable to store progress
+progress_state = {"current": 0, "total": 0, "status": "Idle"}
+
+@app.get("/progress-stream")
+async def progress_stream():
+    async def event_generator():
+        while True:
+            # Send the current progress as a JSON string
+            yield f"data: {json.dumps(progress_state)}\n\n"
+            await asyncio.sleep(1) # Update every second
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

@@ -12,7 +12,7 @@ export default function Scraper() {
     setIsScraping(true);
     try {
       const hashtags = query.split(',').map(tag => tag.trim());
-      await fetch('http://localhost:8000/scrape/start', {
+      await fetch(`${import.meta.env.VITE_API_URL}/scrape/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hashtags, limit })

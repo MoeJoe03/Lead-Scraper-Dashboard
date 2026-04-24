@@ -520,7 +520,11 @@ async def main_wrapper(args):
     "file": f"output/{stem}.csv"
 }
 
+def update_progress(current, total, message):
+    with open("output/progress.json", "w") as f:
+        json.dump({"current": current, "total": total, "status": message}, f)
 async def start_scraper(hashtags, cookies_path, limit=10, headless=True):
+    
     class Args:
         pass
     args = Args()

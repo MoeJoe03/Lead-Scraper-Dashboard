@@ -14,7 +14,7 @@ export default function Settings() {
     formData.append("file", file);
 
     try {
-      await fetch('http://localhost:8000/settings/cookies', {
+      await fetch(`${import.meta.env.VITE_API_URL}/settings/cookies`, {
         method: 'POST',
         body: formData
       });
