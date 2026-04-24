@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-bg-deep-navy: #0f172a;
+  --color-glass-surface: rgba(255, 255, 255, 0.05);
+  --color-glass-stroke: rgba(255, 255, 255, 0.1);
+  --color-glass-fill: rgba(255, 255, 255, 0.05);
+  
+  --color-neon-blue: #22d3ee; /* Cyan 400 */
+  --color-neon-purple: #6366f1; /* Indigo 500 */
+  --color-success: #34d399; /* Emerald 400 */
+  --color-warning: #fbbf24; /* Amber 400 */
+  
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+}
+
+@layer base {
+  body {
+    @apply bg-bg-deep-navy text-text-primary font-sans antialiased;
+    background: 
+      radial-gradient(circle at 0% 0%, #1e293b 0%, #0f172a 100%),
+      radial-gradient(circle at 100% 100%, #312e81 0%, transparent 50%),
+      radial-gradient(circle at 50% 50%, #1e1b4b 0%, transparent 100%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-glass-surface backdrop-blur-xl border border-glass-stroke rounded-3xl;
+    box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.2);
+  }
+
+  .neon-blue-glow {
+    box-shadow: 0 0 15px rgba(34, 211, 238, 0.4);
+  }
+
+  .neon-purple-glow {
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
+  }
+}

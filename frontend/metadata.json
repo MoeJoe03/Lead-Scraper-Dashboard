@@ -1,0 +1,6 @@
+{
+  "name": "LeadFlow",
+  "description": "Internal SaaS dashboard for scraping jobs and lead management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
