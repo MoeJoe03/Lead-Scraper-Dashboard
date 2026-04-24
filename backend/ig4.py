@@ -1,25 +1,3 @@
-"""
-Instagram Top Posts Scraper — South Africa Business Hashtags
-
-Two-phase approach:
-  Phase 1 — Visit each hashtag page and collect all post URLs (no profile visits)
-  Phase 2 — For each post URL, extract the author username then scrape their profile
-
-⚠️  FOR TESTING / EDUCATIONAL PURPOSES ONLY
-    Instagram ToS prohibits scraping. For production use,
-    consider the official Instagram Graph API instead.
-
-Requirements:
-    pip install playwright
-    playwright install chromium
-
-Usage:
-    python instagram_scraper.py
-    python instagram_scraper.py --limit 10 --cookies cookies.json
-    python instagram_scraper.py --headless --cookies cookies.json
-    python instagram_scraper.py --hashtags joburg capetown --limit 5
-"""
-
 import asyncio
 import json
 import csv
@@ -61,9 +39,6 @@ INVALID_USERNAME_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-
-# ── Cookie loader ─────────────────────────────────────────────────────────────
-
 async def load_cookies(context, cookies_path: str):
     with open(cookies_path, "r", encoding="utf-8") as f:
         raw = json.load(f)
@@ -83,12 +58,8 @@ async def load_cookies(context, cookies_path: str):
     await context.add_cookies(cookies)
     print(f"🍪 Loaded {len(cookies)} cookies from {cookies_path}")
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 async def human_delay(min_s=SCROLL_PAUSE_MIN, max_s=SCROLL_PAUSE_MAX):
     await asyncio.sleep(random.uniform(min_s, max_s))
-
 
 def is_valid_username(text: str) -> bool:
     if not text:
@@ -101,7 +72,6 @@ def is_valid_username(text: str) -> bool:
     if " " in text or "•" in text:
         return False
     return True
-
 
 def parse_count(text: str) -> int | None:
     if not text:
@@ -118,11 +88,9 @@ def parse_count(text: str) -> int | None:
     except ValueError:
         return None
 
-
 def extract_email(text: str) -> str | None:
     m = re.search(r"[\w.+-]+@[\w-]+\.[a-z]{2,}", text or "", re.IGNORECASE)
     return m.group() if m else None
-
 
 def extract_phone(text: str) -> str | None:
     m = re.search(
@@ -131,15 +99,11 @@ def extract_phone(text: str) -> str | None:
     )
     return m.group().strip() if m else None
 
-
 def extract_country_code(phone: str | None) -> str | None:
     if not phone:
         return None
     m = re.match(r"(\+\d{1,3})", phone)
     return m.group(1) if m else None
-
-
-# ── Detect logged-in user ─────────────────────────────────────────────────────
 
 async def get_logged_in_username(page) -> str | None:
     try:
@@ -157,39 +121,23 @@ async def get_logged_in_username(page) -> str | None:
         pass
     return None
 
-
-# ═════════════════════════════════════════════════════════════════════════════
-# PHASE 1 — Collect post URLs from hashtag pages (no profile visits)
-# ═════════════════════════════════════════════════════════════════════════════
-
 async def phase1_collect_all_links(page, hashtags: list[str], limit: int) -> dict[str, list[str]]:
-    """
-    Visit each hashtag page in sequence and collect post URLs.
-    Returns a dict of { hashtag: [post_url, ...] }.
-    Does NOT visit any post or profile pages.
-    """
     results: dict[str, list[str]] = {}
-
     for i, hashtag in enumerate(hashtags, 1):
         print(f"\n  [{i}/{len(hashtags)}] Collecting links for #{hashtag}")
         links = await _collect_links_for_tag(page, hashtag, limit)
         results[hashtag] = links
-
-        # Pause between hashtag pages to avoid rate limiting
         if i < len(hashtags):
             pause = random.uniform(HASHTAG_PAUSE_MIN, HASHTAG_PAUSE_MAX)
             print(f"  ⏸  Pausing {pause:.0f}s before next hashtag...")
             await asyncio.sleep(pause)
-
     total = sum(len(v) for v in results.values())
     print(f"\n✅ Phase 1 complete — {total} post links collected across {len(hashtags)} hashtags")
     return results
 
-
 async def _collect_links_for_tag(page, hashtag: str, limit: int) -> list[str]:
     url = f"https://www.instagram.com/explore/tags/{hashtag}/"
     print(f"     🌐 {url}")
-
     try:
         await page.goto(url, timeout=PAGE_LOAD_TIMEOUT)
         await human_delay(3, 5)
@@ -197,7 +145,6 @@ async def _collect_links_for_tag(page, hashtag: str, limit: int) -> list[str]:
         print(f"     ❌ Failed to load hashtag page: {e}")
         return []
 
-    # Dismiss any dialogs
     for selector in [
         '[role="dialog"] button',
         'button:has-text("Not Now")',
@@ -214,16 +161,12 @@ async def _collect_links_for_tag(page, hashtag: str, limit: int) -> list[str]:
     links: list[str] = []
     seen: set[str] = set()
     scrolls = 0
-
     while len(links) < limit and scrolls < limit * 3:
         for a in await page.query_selector_all('a[href*="/p/"]'):
             href = await a.get_attribute("href")
             if href and "/p/" in href and href not in seen:
                 seen.add(href)
-                full = (
-                    f"https://www.instagram.com{href}"
-                    if href.startswith("/") else href
-                )
+                full = (f"https://www.instagram.com{href}" if href.startswith("/") else href)
                 links.append(full)
         if len(links) >= limit:
             break
@@ -235,18 +178,7 @@ async def _collect_links_for_tag(page, hashtag: str, limit: int) -> list[str]:
     print(f"     ✅ {len(links)} posts found")
     return links
 
-
-# ═════════════════════════════════════════════════════════════════════════════
-# PHASE 2 — For each post URL: extract username → scrape profile
-# ═════════════════════════════════════════════════════════════════════════════
-
 async def get_username_from_post(page, post_url: str, logged_in_user: str | None) -> str | None:
-    """
-    Extract the post author's username using API/JSON only — never DOM text.
-    Explicitly filters out the logged-in user at every step.
-    """
-
-    # Strategy 1: oEmbed API (fastest, most reliable)
     try:
         resp = await page.request.get(
             f"https://www.instagram.com/api/v1/oembed/?url={post_url}",
@@ -254,18 +186,13 @@ async def get_username_from_post(page, post_url: str, logged_in_user: str | None
         )
         if resp.ok:
             data = await resp.json()
-            author = (
-                data.get("author_name")
-                or data.get("author_url", "").rstrip("/").split("/")[-1]
-            )
+            author = (data.get("author_name") or data.get("author_url", "").rstrip("/").split("/")[-1])
             if author and is_valid_username(author) and author != logged_in_user:
                 return author
     except Exception:
         pass
 
-    # Strategy 2: Intercept Instagram's own API response as the post page loads
     captured: list[str] = []
-
     async def handle_response(response):
         if captured:
             return
@@ -291,7 +218,6 @@ async def get_username_from_post(page, post_url: str, logged_in_user: str | None
     if captured:
         return captured[0]
 
-    # Strategy 3: Parse injected JSON script tags on the loaded page
     try:
         result = await page.evaluate(f"""
             () => {{
@@ -314,10 +240,8 @@ async def get_username_from_post(page, post_url: str, logged_in_user: str | None
 
     return None
 
-
 async def scrape_profile(page, username: str, source_hashtag: str) -> dict:
     profile_url = f"https://www.instagram.com/{username}/"
-
     record = {
         "username":           username,
         "profile_link":       profile_url,
@@ -340,7 +264,6 @@ async def scrape_profile(page, username: str, source_hashtag: str) -> dict:
         "scraped_at":         datetime.now().isoformat(),
     }
 
-    # API first
     try:
         response = await page.request.get(
             f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}",
@@ -361,38 +284,24 @@ async def scrape_profile(page, username: str, source_hashtag: str) -> dict:
                 record["following"]    = u.get("edge_follow", {}).get("count")
                 record["email"]        = u.get("business_email") or u.get("public_email")
                 record["phone"]        = u.get("business_phone_number") or u.get("public_phone_number")
-                record["phone_country_code"] = (
-                    u.get("business_phone_country_code") or u.get("public_phone_country_code")
-                )
+                record["phone_country_code"] = (u.get("business_phone_country_code") or u.get("public_phone_country_code"))
                 record["city"] = u.get("city_name") or u.get("location_name")
 
                 bio_links = u.get("bio_links", [])
-                record["external_url"] = (
-                    bio_links[0].get("url") if bio_links else u.get("external_url")
-                )
+                record["external_url"] = (bio_links[0].get("url") if bio_links else u.get("external_url"))
 
                 raw_addr = u.get("business_address_json") or u.get("address_json")
                 if isinstance(raw_addr, str):
                     try:
                         addr = json.loads(raw_addr)
-                        parts = [
-                            addr.get("street_address", ""),
-                            addr.get("zip_code", ""),
-                            addr.get("city_name", ""),
-                            addr.get("region_name", ""),
-                        ]
+                        parts = [addr.get("street_address", ""), addr.get("zip_code", ""), addr.get("city_name", ""), addr.get("region_name", "")]
                         record["address"] = ", ".join(p for p in parts if p)
                         if not record["city"]:
                             record["city"] = addr.get("city_name")
                     except Exception:
                         record["address"] = raw_addr
                 elif isinstance(raw_addr, dict):
-                    parts = [
-                        raw_addr.get("street_address", ""),
-                        raw_addr.get("zip_code", ""),
-                        raw_addr.get("city_name", ""),
-                        raw_addr.get("region_name", ""),
-                    ]
+                    parts = [raw_addr.get("street_address", ""), raw_addr.get("zip_code", ""), raw_addr.get("city_name", ""), raw_addr.get("region_name", "")]
                     record["address"] = ", ".join(p for p in parts if p)
                     if not record["city"]:
                         record["city"] = raw_addr.get("city_name")
@@ -406,11 +315,9 @@ async def scrape_profile(page, username: str, source_hashtag: str) -> dict:
 
                 print(f"    ✅ API data OK")
                 return record
-
     except Exception as e:
         print(f"    ⚠️  API failed ({e}), falling back to DOM")
 
-    # DOM fallback
     try:
         await page.goto(profile_url, timeout=PAGE_LOAD_TIMEOUT)
         await human_delay(2, 4)
@@ -473,9 +380,6 @@ async def scrape_profile(page, username: str, source_hashtag: str) -> dict:
 
     return record
 
-
-# ── Save ──────────────────────────────────────────────────────────────────────
-
 FIELDNAMES = [
     "username", "profile_link", "full_name",
     "is_business", "is_private", "is_verified",
@@ -486,7 +390,6 @@ FIELDNAMES = [
     "source_hashtag", "scraped_at",
 ]
 
-
 def save_results(results: list[dict], stem: str):
     if not results:
         return
@@ -496,7 +399,6 @@ def save_results(results: list[dict], stem: str):
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(results)
-
 
 def print_summary(results: list[dict], stem: str):
     print(f"\n{'='*58}")
@@ -517,21 +419,7 @@ def print_summary(results: list[dict], stem: str):
     print(f"\n  Output → output/{stem}.(json|csv)")
     print(f"{'='*58}\n")
 
-
-# ── Main ──────────────────────────────────────────────────────────────────────
-
-async def main():
-    parser = argparse.ArgumentParser(description="Instagram SA business profile scraper")
-    parser.add_argument("--hashtags", nargs="+", default=SA_HASHTAGS,
-                        help="Hashtags to scrape (without #)")
-    parser.add_argument("--limit",   type=int, default=DEFAULT_LIMIT,
-                        help=f"Posts per hashtag (default: {DEFAULT_LIMIT})")
-    parser.add_argument("--cookies", type=str, default="cookies.json",
-                        help="Path to exported cookies JSON")
-    parser.add_argument("--headless", action="store_true",
-                        help="Run without a visible browser window")
-    args = parser.parse_args()
-
+async def main_wrapper(args):
     stem = f"ig_sa_profiles_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     print(f"\n📸 Instagram SA Business Profile Scraper")
@@ -567,16 +455,13 @@ async def main():
         else:
             print(f"⚠️  {args.cookies} not found — running without auth (limited data)\n")
 
-        # Detect logged-in user before anything else
         logged_in_user = await get_logged_in_username(page)
 
-        # ── PHASE 1: collect all post links from all hashtag pages ────────────
         print(f"\n{'─'*50}")
         print(f"  PHASE 1 — Collecting post links")
         print(f"{'─'*50}")
         hashtag_links = await phase1_collect_all_links(page, args.hashtags, args.limit)
 
-        # Flatten into a list of (post_url, source_hashtag) tuples
         all_posts: list[tuple[str, str]] = []
         for hashtag, links in hashtag_links.items():
             for link in links:
@@ -587,7 +472,6 @@ async def main():
         print(f"  Total posts to process: {len(all_posts)}")
         print(f"{'─'*50}")
 
-        # ── PHASE 2: extract username from each post then scrape the profile ──
         all_profiles: list[dict] = []
         seen_usernames: set[str] = set()
 
@@ -631,6 +515,17 @@ async def main():
     save_results(all_profiles, stem)
     print_summary(all_profiles, stem)
 
+    return {
+    "count": len(all_profiles),
+    "file": f"output/{stem}.csv"
+}
 
-if __name__ == "__main__":
-    asyncio.run(main())
+async def start_scraper(hashtags, cookies_path, limit=10, headless=True):
+    class Args:
+        pass
+    args = Args()
+    args.hashtags = hashtags
+    args.limit = limit
+    args.cookies = cookies_path
+    args.headless = headless
+    return await main_wrapper(args)
